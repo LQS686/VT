@@ -1,0 +1,4 @@
+-keep class io.vt.framework.** { *; }
+-keep class io.vt.container.** { *; }
+-keep class de.robv.android.xposed.** { *; }
+-keep class io.vt.xposed.** { *; }

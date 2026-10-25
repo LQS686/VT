@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:allowBackup="true"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="VT 示例 Xposed 模块">
+        <meta-data android:name="xposedmodule" android:value="true" />
+        <meta-data android:name="xposeddescription" android:value="VT 示例模块：勾选后修改示例应用的文案" />
+        <meta-data android:name="xposedminversion" android:value="82" />
+    </application>
+</manifest>

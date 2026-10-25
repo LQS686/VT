@@ -1,0 +1,4 @@
+-keep class de.robv.android.xposed.** { *; }
+-keep class android.content.res.XResources { *; }
+-keep class io.vt.xposed.** { *; }
+-keepclassmembers class io.vt.xposed.Hooker { public java.lang.Object callback(java.lang.Object[]); }

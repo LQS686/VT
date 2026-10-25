@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:name=".SampleApp"
+        android:allowBackup="true"
+        android:icon="@android:drawable/sym_def_app_icon"
+        android:label="VT 示例应用"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <meta-data android:name="io.vt.sampleapp.key" android:value="meta-ok" />
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".SecondActivity" android:exported="false" />
+        <activity android:name=".ResultActivity" android:exported="false" />
+        <activity
+            android:name=".RemoteActivity"
+            android:exported="false"
+            android:process=":remote" />
+        <provider
+            android:name=".SampleProvider"
+            android:authorities="io.vt.sampleapp.provider"
+            android:exported="false" />
+        <service android:name=".SampleService" android:exported="false" />
+        <service
+            android:name=".SampleRemoteService"
+            android:exported="false"
+            android:process=":remote" />
+        <receiver android:name=".SampleStaticReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="io.vt.sampleapp.STATIC" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>
