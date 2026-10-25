@@ -239,7 +239,31 @@
 | `/proc/self/maps` 含 `libvt_xposed.so` 与容器路径 | LSPlant/容器以宿主 APK 加载 | 原生风控/反 Xposed 扫描 |
 | 服务端风险 token | 由字节系 SecSDK 生成，无法从原版进程读取 | 正文接口拒绝 |
 
-结论：**这是服务端防盗版/风控，不是可以简单 Hook 掉的本地弹窗**。在“免 root + 宿主 UID + Xposed 注入”的约束下，无法保证通过强对抗应用的正文保护。若必须阅读其受保护内容，建议使用官方应用；需要模块注入时使用 root + LSPosed（真实 UID/数据目录）是更可靠的路线。本项目不会绕过付费/会员/DRM。
+结论：**这是客户端环境检测 + 服务端防盗版/风控，不是可以简单 Hook 掉的本地弹窗**。APK 内可读到
+`isXposedExist/isXposedExists`、`isVirtual`、`isRoot` 等检测字段；`SecurityUtils.findHookAppName`
+会检查已知 Xposed/Magisk 包名（VT 不在其列表内），更底层的字节系 SecSDK/Mannor 仍在检查进程、路径与
+Xposed 痕迹，最终由服务端返回 `ILLEGAL_ACCESS`。
+
+### 同类项目对照
+
+| 项目 | 无 root | 不改原 APK | 在真实 UID/数据目录运行 | 强对抗应用结果 |
+| --- | --- | --- | --- | --- |
+| VirtualXposed / VirtualApp | ✅ | ✅ | ❌ 宿主 UID + IO 重定向 | 常见虚拟环境检测/风控 |
+| 太极免 root / 应用转生 | ✅ | ⚠️ 部分依赖转生/虚拟环境 | ❌ | 强校验应用仍可能拒绝 |
+| LSPatch | ✅ | ❌ 重打包并重签名 | ✅ 真实 UID/数据目录 | 签名校验类应用可能拒绝 |
+| LSPosed（root） | ❌ | ✅ | ✅ | 最可靠，但不是免 root |
+| VT（本项目） | ✅ | ✅ | ❌ 宿主 UID + 容器 dataDir | 正文 `ILLEGAL_ACCESS` |
+
+参考：
+[VirtualXposed](https://github.com/android-hacker/VirtualXposed)、
+[VirtualApp](https://github.com/asLody/VirtualApp)、
+[LSPatch](https://github.com/LSPosed/LSPatch)、
+[LSPosed](https://github.com/LSPosed/LSPosed)。
+
+**结论：三条约束（免 root / 不改 APK / 真实进程环境）无法同时满足。** 若必须让番茄/红果正文通过校验，
+必须放宽一条：使用官方应用（不改包、不必 root，但无模块），使用 LSPosed（真实进程/UID/数据目录，
+但需 root），或使用 LSPatch/转生（免 root，但修改 APK 与签名）。VT 不会伪造内容授权、签名或 DRM；
+需要对强对抗应用注入模块时，推荐的工程方向是 **可选 root + LSPosed 桥接**，而不是继续在容器里堆反检测。
 
 ## 4. 目标应用阻塞项
 
