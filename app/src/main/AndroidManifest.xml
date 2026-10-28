@@ -54,36 +54,36 @@
         -->
         <activity android:name="io.vt.container.stub.StubStandard0" android:exported="false"
             android:process=":g0" android:launchMode="standard"
-            android:taskAffinity="io.vt.framework.guest0" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest0" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity android:name="io.vt.container.stub.StubSingleTop0" android:exported="false"
             android:process=":g0" android:launchMode="singleTop"
-            android:taskAffinity="io.vt.framework.guest0" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest0" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity android:name="io.vt.container.stub.StubSingleTask0" android:exported="false"
             android:process=":g0" android:launchMode="singleTask"
-            android:taskAffinity="io.vt.framework.guest0" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest0" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity android:name="io.vt.container.stub.StubSingleInstance0" android:exported="false"
             android:process=":g0" android:launchMode="singleInstance"
-            android:taskAffinity="io.vt.framework.guest0" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest0" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
 
         <activity android:name="io.vt.container.stub.StubStandard1" android:exported="false"
             android:process=":g1" android:launchMode="standard"
-            android:taskAffinity="io.vt.framework.guest1" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest1" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity android:name="io.vt.container.stub.StubSingleTop1" android:exported="false"
             android:process=":g1" android:launchMode="singleTop"
-            android:taskAffinity="io.vt.framework.guest1" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest1" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity android:name="io.vt.container.stub.StubSingleTask1" android:exported="false"
             android:process=":g1" android:launchMode="singleTask"
-            android:taskAffinity="io.vt.framework.guest1" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest1" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
         <activity android:name="io.vt.container.stub.StubSingleInstance1" android:exported="false"
             android:process=":g1" android:launchMode="singleInstance"
-            android:taskAffinity="io.vt.framework.guest1" android:theme="@style/Theme.VT.Stub"
+            android:taskAffinity="${applicationId}.guest1" android:theme="@style/Theme.VT.Stub"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|navigation|smallestScreenSize|uiMode|fontScale|locale|layoutDirection|density" />
 
         <receiver android:name="io.vt.container.runtime.ControlReceiver0"

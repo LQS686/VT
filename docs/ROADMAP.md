@@ -23,8 +23,10 @@
 - Guest 前台服务通知：宿主身份真实通知、图标/渠道改写、点击回跳、stopForeground/停止容器清理；
 - Guest 子进程 Activity：按 `processName` 路由到 `:g0/:g1`，独立 Application/模块加载，停止时双进程退出；
 - **activity-alias 启动保真**：保留 alias 组件语义、实例化映射 `targetActivity`；抖音/番茄/Telegram 均按真实 launcher 启动；
-- **番茄小说 7.4.1.32**：自然 Splash → 隐私同意 → 书城推荐流；
-- **红果免费短剧 7.4.1.32**：自然 Splash → 隐私同意 → 推荐短剧流 → 全屏播放；
+- **番茄小说 7.4.1.32**：自然 Splash → 隐私同意 → 书城推荐流 → 书籍详情 → **正文阅读**
+  （屏蔽 Metasec 反 Hook 采样后实测；服务端风险状态滞留时需清除 Guest 数据，见兼容性 3.6.4）；
+- **红果免费短剧 7.4.1.32**：自然 Splash → 隐私同意 → 推荐短剧流 → 全屏播放 → 下滑切换；
+  Toast 归属校验崩溃已修复；
 - **抖音短信登录容器侧修复**：`execStartActivity` 保留 Guest Activity 作为结果接收者，示例 v17 验证
   `onActivityResult` 往返；抖音登录页可打开，验证码页待真实手机号复测；
 - **Toast 身份修复**：`Toast$TN` 包名/Context 宿主化，解决番茄系初始化 Toast 触发 WindowManager 拒绝崩溃；
@@ -37,17 +39,59 @@
 2. **跨应用广播**：将 Guest 隐式广播按 action 分类，内部定向宿主、外部走系统身份。
 3. **前台服务语义与系统调度**：真实通知展示/点击回跳/停止清理已完成；剩余 AMS 前台服务登记
    （oom adj、5 秒规则）、真实 JobScheduler/AlarmManager 调度、账户等系统服务的身份校验。
-4. **签名与反篡改兼容**：补全 `SigningInfo`、PMS 查询、`getInstalledPackages` 过滤、ApplicationInfo 元数据；为签名校验类 SDK 提供 profile。
+4. **签名与反篡改兼容**：补全 `SigningInfo`、PMS 查询、`getInstalledPackages` 过滤、ApplicationInfo 元数据；
+   为签名校验类 SDK 提供 profile。
+   **已完成的客户端部分（2026-10-26）**：PackageManager 视图自洽性系统性修复，
+   示例应用内置 28 项交叉比对断言（容器 / 普通 / 真机已卸载三场景均 `passed=28 failed=0`，
+   Android 15 模拟器与 Android 16 arm64 真机 eb72c928 均已复跑）。
+   修复覆盖 flags 语义、组件级查询、metaData、签名自洽、UID 反查、宿主包隐藏，
+   以及此前完全绕过容器的静态查询路径 `PackageManager.getPackageInfoAsUserCached`；
+   另修正了 `before` 回调用 `throw` 短路会被 `Hooker.invoke()` 回滚、
+   导致目标应用真机已安装时严格语义失效的问题。
+   仍未覆盖：服务端签名校验、真机完整性校验类 SDK。
 5. **真实设备兼容实验室**：Android 16 arm64 HyperOS 真机已跑通抖音主流程、番茄小说/红果短剧
    启动与浏览；继续补抖音短信登录复测、反作弊/长稳，以及每应用独立 profile。
-6. **服务端防盗版（阻塞）**：番茄/红果正文接口返回 `ILLEGAL_ACCESS`（code 110）。这是服务端风控，
-   在免 root、宿主 UID、Xposed 注入约束下无法可靠通过；若要继续，需要研究“真实 UID/数据目录”的
-   可选 root 模式或明确将其列为不支持场景（不得绕过付费/会员/DRM）。
+6. **启动回归、反 Hook 采样与稳定性（2026-10-26 已修部分）**：`ActivityTaskManager` 归属校验、
+   Toast `enqueueToast` 崩溃、Metasec 调用栈采样均已定位并修复，红果可浏览/播放、
+   番茄首会话正文可读（见兼容性 3.6.4）。
+   **第四批（2026-10-26）**：
+   - 修复媒体键 `ISessionManager` 归属（按暂停键不再杀 Guest）；
+   - `stop` 改为 PID 终止并等待退出，`clear` 确认退出后再删数据（旧广播在进程改名后不可达）；
+   - 静态 Receiver 用 Guest classloader 接管，修复 `t41.c` ClassNotFound 与“VT 反复停止”；
+   - 干净对照确认：官方直装同机 3 次重启正常，而 Guest 真正清空数据/无残留后
+     首个 `bookmall/tab` 仍被 `ILLEGAL_ACCESS` 拒绝并弹盗版 Toast；
+   - 每 Guest 独立 Android ID 实验无效，已撤回；LSPatch 改签在 MuMu 受 houdini 限制，
+     需真 arm64 设备验证。
+   - **番茄 7.1.9.32（MuMu）**：书城/详情/第 1 章正文可读；多轮 stop/relaunch 中
+     110 次数在 0–3 次间波动，触发式而非永久首会话。
+   - **抖音 36.4.0（MuMu）**：官方直装能到隐私页；容器版 `io.vt.framework:g0` 在 Splash 后
+     约 1 秒原生 SIGSEGV（ExitInfo `SIGNALED status=11`），无 Java FATAL。
+     ContentProvider 改为传 Application 后 Aha/EC 的 ClassCastException 消失，
+     但仍 SIGSEGV。AppOps 包归属错误只是症状；AppOps 改写尝试未生效，已撤回。
+     真实设备 40.7.0 需目标版本复测。
+   - **签名路径诊断**：CronetUrlRequest/CronetAppProviderManager 的安全头 Hook 已安装
+     但从未命中，x-argus 不在该 Java/Cronet 桥生成，无法用此方式证明降级。
+   - **2026-10-27 干净 profile + native 路径虚拟化 A/B**：新 MuMu profile（PD2245，
+     adb 16416）+ maps/fd 路径 shim → 红果启动/feed 110=0，连续 3 次 force-stop 重启仍 0；
+     点“全屏观看”时 `bookmall/tab` 仍 2×110/网络错误；同 profile 官方直装播放正常。
+     关闭 shim 后 Guest 启动约 1 秒原生崩溃（ExitInfo `APP CRASH(NATIVE)` status=6），
+     说明 shim 是启动必需。原生 trace 抓到 SecSDK 读 `/proc/self/maps`、枚举
+     `/proc/self/fd` 并 readlink 到宿主 APK/容器路径；getuid 仅框架调用。
+     剩余 bookmall 110 指向宿主 UID/host APK 签名/dataDir 或服务端 device risk。
+   **仍阻塞**：免 root 容器无法同时满足真实 UID/数据目录，服务端风控无法从本地彻底消除；
+   不得绕过付费/会员/DRM。
+7. **改包路线验证（P0 备选）**：已在本地生成红果/番茄 7.4.1.32 的 LSPatch 本地模式包
+   （无嵌入模块，见 TESTING 9.10）；MuMu 因 houdini 无法运行。下一步在真实 arm64 设备上
+   优先用第二用户安装，验证本地签名校验、首屏/正文/播放与服务端是否接受改签包；
+   LSPatch 0.398 的 LSPlant 对 Android 16 的兼容性未知。若可用，再评估将其作为
+   “可选改包模式”接入项目（不用于绕过付费/DRM；需用户明确确认安装范围）。
 
 ## P1：模块与稳定性
 
 - ~~APK 体积裁剪~~（已完成 R8 + ABI 分包，约 2.8 MB/ABI；正式发布仍需移除 debug bridge、配置 release 签名）；
-- 进程槽回收、Guest 崩溃日志持久化、ANR 诊断；
+- ~~Guest 崩溃日志持久化~~（已加入原生 SIGSEGV/SIGABRT 探针，写 maps+PC 到
+  `files/logs/native-crash.log`；MuMu/houdini 下抖音崩溃未命中，待真机验证）；
+  进程槽回收、ANR 诊断；
 - 模块设置 Activity 在容器内运行，或模块 prefs 镜像导入；
 - 应用导入进度/失败原因 UI、系统/游戏过滤开关；
 - 自动更新策略、签名变更提示、空间占用清理；

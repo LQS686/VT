@@ -9,6 +9,8 @@ import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.net.Uri
 import android.os.IBinder
+import android.os.Process
+import android.content.pm.PackageManager
 import android.util.Log
 import android.widget.Button
 import android.widget.TextView
@@ -103,7 +105,7 @@ class MainActivity : Activity() {
             "serviceStarted=${SampleApp.serviceStarted}, startResult=${serviceComponent?.className}, " +
             "native=$nativeResult, bound=$bound, boundResult=${SampleApp.boundResult}, " +
             "broadcast=$broadcastResult/${SampleApp.broadcastCount}, static=${SampleApp.staticCount}, " +
-            "meta=$metaValue, signers=$signerCount"
+            "meta=$metaValue, signers=$signerCount\n${packageManagerAudit()}"
         findViewById<Button>(R.id.open_second).setOnClickListener {
             startActivity(Intent(this, SecondActivity::class.java))
         }
@@ -176,6 +178,23 @@ class MainActivity : Activity() {
             }
             state.text = "跨进程绑定请求：bound=$bound"
         }
+    }
+
+    /**
+     * PackageManager 视图自洽性审计。真机上应全部 PASS；
+     * 容器中任何一项 FAIL 都说明该应用的 PM 视图可被宿主用来判定虚拟环境。
+     */
+    private fun packageManagerAudit(): String {
+        val results = runCatching { PmAudit.run(packageManager, packageName) }
+            .getOrElse { listOf(PmAudit.Result("audit", false, "throw ${it.javaClass.simpleName}")) }
+        val componentResults = runCatching {
+            PmAudit.runComponentAudit(packageManager, packageName)
+        }.getOrElse {
+            listOf(PmAudit.Result("component-audit", false, "throw ${it.javaClass.simpleName}"))
+        }
+        val all = results + componentResults
+        val failed = all.count { !it.passed }
+        return "PM自检 ${if (failed == 0) "全部通过" else "$failed 项失败"}（共 ${all.size} 项）"
     }
 
     override fun onResume() {
@@ -261,7 +280,7 @@ class MainActivity : Activity() {
             "serviceStarted=${SampleApp.serviceStarted}, startResult=${serviceComponent?.className}, " +
             "native=$nativeResult, bound=$bound, boundResult=${SampleApp.boundResult}, " +
             "broadcast=$broadcastResult/${SampleApp.broadcastCount}, static=${SampleApp.staticCount}, " +
-            "meta=$metaValue, signers=$signerCount"
+            "meta=$metaValue, signers=$signerCount\n${packageManagerAudit()}"
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

@@ -1,5 +1,7 @@
 package io.vt.container.data
 
+import android.os.Build
+
 data class StoredActivityInfo(
     var name: String = "",
     var theme: Int = 0,
@@ -77,7 +79,24 @@ data class GuestRecord(
     var services: MutableList<StoredServiceInfo> = mutableListOf(),
     var receivers: MutableList<StoredReceiverInfo> = mutableListOf(),
     var metaData: MutableMap<String, String> = mutableMapOf(),
-    var importOrigin: String = "installed"
+    var importOrigin: String = "installed",
+
+    // 以下字段在导入时从真机 PackageManager 读取，用于让容器内的 Guest 视图
+    // 与真机上该应用的视图保持一致（而不是框架自己编造的值）。
+    var appProcessName: String? = null,
+    var appTaskAffinity: String? = null,
+    var appCategory: Int = 0,
+    var primaryCpuAbi: String? = null,
+    var requestedPermissions: MutableList<String> = mutableListOf(),
+    var requestedPermissionsFlags: MutableList<Int> = mutableListOf(),
+    var signingSchemeVersion: Int = 0,
+    var multipleSigners: Boolean = false,
+    var signingHistory: MutableList<String> = mutableListOf(),
+    // 真机上 dataDir 与 credentialProtectedDataDir 是同一个路径（/data/user/0/<pkg>），
+    // 只有 deviceProtectedDataDir 位于 /data/user_de/0/<pkg>。
+    // 这里按真机语义记录，避免容器里凭空造出第三种结构。
+    var deviceProtectedDataDir: String = "",
+    var credentialProtectedDataDir: String = ""
 ) {
     fun baseApk(): String? = apkFiles.firstOrNull()
     fun splits(): List<String> = apkFiles.drop(1)
@@ -106,6 +125,47 @@ data class InstalledApp(
 sealed class LaunchOutcome {
     data object Success : LaunchOutcome()
     data class Failure(val message: String) : LaunchOutcome()
+}
+
+/**
+ * 生成"真机形态"的安装路径。
+ *
+ * 真机上的 sourceDir 形如：
+ *   /data/app/~~<base64ish>==/<pkg>-<base64ish>==/base.apk
+ * 容器里 Guest 自己的 APK 副本位于宿主私有目录，一旦把这个路径暴露出去，
+ * 应用一眼就能看出自己跑在容器里。
+ *
+ * 当目标应用在真机上不存在（APK 文件导入、或已卸载）时，
+ * 用这个形态生成一个占位路径：文件并不存在，但结构与真机完全一致，
+ * 比暴露容器目录安全得多。
+ */
+fun syntheticInstalledSourceDir(packageName: String): String {
+    val suffix = base64ish(packageName, 8)
+    return "/data/app/~~${base64ish(packageName, 16)}==/$packageName-$suffix==/base.apk"
+}
+
+fun syntheticInstalledSplitDir(packageName: String, splitName: String): String {
+    val suffix = base64ish(packageName + splitName, 8)
+    return "/data/app/~~${base64ish(packageName, 16)}==/$packageName-$suffix==/$splitName"
+}
+
+fun syntheticInstalledNativeLibDir(packageName: String): String {
+    val suffix = base64ish(packageName, 8)
+    return "/data/app/~~${base64ish(packageName, 16)}==/$packageName-$suffix==/lib/${Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"}"
+}
+
+private fun base64ish(seed: String, length: Int): String {
+    val alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+    var hash = 1125899906842597L
+    for (ch in seed) {
+        hash = 31 * hash + ch.code
+    }
+    val sb = StringBuilder(length)
+    repeat(length) {
+        hash = hash * 6364136223846793005L + 1442695040888963407L
+        sb.append(alphabet[((hash ushr 33) % alphabet.length).toInt()])
+    }
+    return sb.toString()
 }
 
 data class UpdateStatus(

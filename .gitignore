@@ -18,3 +18,8 @@ build*.log
 **/.cxx/
 .externalNativeBuild/
 **/.externalNativeBuild/
+
+# VM ROM image (202MB, exceeds GitHub file limit; fetch separately)
+lightvm/src/main/assets/*.7z
+# local tool state
+.workbuddy/

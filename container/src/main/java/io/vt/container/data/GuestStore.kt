@@ -101,9 +101,13 @@ class GuestStore private constructor(context: Context) {
         File(root, "apk").mkdirs()
         File(root, "lib").mkdirs()
         File(root, "oat").mkdirs()
-        val data = File(root, "data")
-        for (name in listOf("files", "cache", "shared_prefs", "databases", "no_backup", "code_cache")) {
-            File(data, name).mkdirs()
+        // data / data_de 对应真机上的
+        // dataDir(=credentialProtectedDataDir) / deviceProtectedDataDir。
+        for (dir in listOf("data", "data_de")) {
+            val data = File(root, dir)
+            for (name in listOf("files", "cache", "shared_prefs", "databases", "no_backup", "code_cache")) {
+                File(data, name).mkdirs()
+            }
         }
     }
 }

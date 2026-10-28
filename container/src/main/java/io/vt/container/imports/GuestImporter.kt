@@ -99,6 +99,8 @@ class GuestImporter(
             record.updatedAt = now
             record.signatures = extractSignatures(packageInfo).toMutableList()
             record.importOrigin = "installed"
+            // 真机安装路径。应用重装后路径会变（/data/app/~~<hash>==/...），
+            // 所以每次导入都刷新为最新值；运行期即使该路径已失效也不回退容器副本。
             record.installedSourceDir = appInfo.sourceDir
             record.installedSplitSourceDirs = appInfo.splitSourceDirs?.toMutableList()
                 ?: mutableListOf()
@@ -111,6 +113,11 @@ class GuestImporter(
             record.firstInstallTime = packageInfo.firstInstallTime
             record.lastUpdateTime = packageInfo.lastUpdateTime
             record.dataDir = File(guestDir(record), "data").absolutePath
+            // 真机语义：credentialProtectedDataDir 与 dataDir 同路径，
+            // 只有 deviceProtectedDataDir 位于另一个受保护目录。
+            record.credentialProtectedDataDir = record.dataDir
+            record.deviceProtectedDataDir = File(guestDir(record), "data_de").absolutePath
+            collectRuntimeMetadata(record, packageInfo, appInfo)
             store.ensureGuestLayout(record)
 
             progress("复制安装包")
@@ -199,6 +206,9 @@ class GuestImporter(
                 record.firstInstallTime = 0L
                 record.lastUpdateTime = 0L
                 record.dataDir = File(guestDir(record), "data").absolutePath
+                record.credentialProtectedDataDir = record.dataDir
+                record.deviceProtectedDataDir = File(guestDir(record), "data_de").absolutePath
+                collectRuntimeMetadata(record, packageInfo, appInfo)
                 store.ensureGuestLayout(record)
 
                 val apkDir = File(guestDir(record), "apk")
@@ -251,6 +261,56 @@ class GuestImporter(
             ?: return null
         if (installed.longVersionCode <= guest.versionCode) return null
         return importInstalled(guest.sourcePackage)
+    }
+
+    /**
+     * 采集真机上该应用的元数据。
+     *
+     * 容器内自造的 ApplicationInfo / PackageInfo 只要有一个字段与真机不符，
+     * 应用就能通过交叉比对（uid、dataDir、processName、签名、ABI 等）判定这是虚拟环境。
+     * 因此这里逐项按真机值落地，运行期直接复用，不再由框架编造。
+     */
+    private fun collectRuntimeMetadata(
+        record: GuestRecord,
+        packageInfo: PackageInfo,
+        appInfo: ApplicationInfo
+    ) {
+        record.appProcessName = appInfo.processName
+        record.appTaskAffinity = appInfo.taskAffinity
+        record.appCategory = appInfo.category
+        // primaryCpuAbi 是 @hide 字段，公开 SDK 里取不到，只能反射读。
+        record.primaryCpuAbi = readHiddenField(appInfo, "primaryCpuAbi") as? String
+        record.requestedPermissions = packageInfo.requestedPermissions?.toMutableList()
+            ?: mutableListOf()
+        record.requestedPermissionsFlags = packageInfo.requestedPermissionsFlags?.toMutableList()
+            ?: mutableListOf()
+
+        val signingInfo = packageInfo.signingInfo
+        if (signingInfo != null) {
+            record.signingSchemeVersion = signingInfo.schemeVersion
+            record.multipleSigners = signingInfo.hasMultipleSigners()
+            record.signingHistory = signingInfo.signingCertificateHistory
+                ?.map { Base64.encodeToString(it.toByteArray(), Base64.NO_WRAP) }
+                ?.toMutableList()
+                ?: mutableListOf()
+        }
+    }
+
+    /** 读取 @hide 字段（如 ApplicationInfo.primaryCpuAbi）。 */
+    private fun readHiddenField(target: Any, name: String): Any? {
+        var clazz: Class<*>? = target.javaClass
+        while (clazz != null) {
+            try {
+                val field = clazz.getDeclaredField(name)
+                field.isAccessible = true
+                return field.get(target)
+            } catch (_: NoSuchFieldException) {
+                clazz = clazz.superclass
+            } catch (_: Throwable) {
+                return null
+            }
+        }
+        return null
     }
 
     private fun guestDir(record: GuestRecord): File =

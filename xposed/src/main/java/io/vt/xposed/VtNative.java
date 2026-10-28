@@ -15,7 +15,7 @@ public final class VtNative {
     public static synchronized boolean ensureLoaded() {
         if (!loaded) {
             try {
-                System.loadLibrary("vt_xposed");
+                System.loadLibrary("appcore");
                 loaded = true;
                 initialized = nativeIsInitialized();
             } catch (Throwable t) {
@@ -44,5 +44,11 @@ public final class VtNative {
     public static native boolean makeDexTrusted(File file);
 
     public static native boolean deoptimize(Executable method);
+
+    public static native boolean installCrashHandler(String path);
+
+    public static native boolean installNativeTrace(String path);
+
+    public static native boolean installEnvShim(String hostPackage, String guestPackage, String realApk);
 
 }

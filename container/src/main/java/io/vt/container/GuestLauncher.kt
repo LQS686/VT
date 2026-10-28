@@ -44,20 +44,93 @@ class GuestLauncher(
             val key = "slot_$slot"
             val assigned = prefs.getString(key, null)
             if (assigned != null && assigned != guest.id) continue
-            if (!running.contains("${context.packageName}:g$slot")) {
-                if (assigned == guest.id) prefs.edit().remove(key).apply()
-                continue
-            }
-            // Unassigned slots may host a declared guest subprocess; the receiver validates
-            // the guest id before killing its process.
+            if (!slotAlive(slot, assigned, running)) continue
+            // Best-effort cleanup (foreground notifications) before the process is killed.
             val receiver = "io.vt.container.runtime.ControlReceiver$slot"
             val intent = Intent(io.vt.container.runtime.ACTION_STOP_GUEST)
                 .setClassName(context.packageName, receiver)
                 .putExtra(io.vt.container.runtime.EXTRA_STOP_GUEST_ID, guest.id)
-            context.sendBroadcast(intent)
-            if (assigned == guest.id) prefs.edit().remove(key).apply()
-            XposedLog.log("请求停止 ${guest.label} (slot=$slot)")
+            runCatching { context.sendBroadcast(intent) }
         }
+
+        // The guest renames its process to the target package, so AMS may no longer route
+        // broadcasts to :g0/:g1 components. Kill by PID instead; manager and guest share UID.
+        var last = emptyList<Pair<Int, String>>()
+        repeat(3) {
+            val pids = guestProcesses(guest)
+            if (pids.isEmpty()) return@repeat
+            last = pids
+            for ((pid, name) in pids) {
+                runCatching { android.os.Process.killProcess(pid) }
+                XposedLog.log("kill guest pid=$pid name=$name")
+            }
+            val deadline = System.currentTimeMillis() + 1500
+            while (System.currentTimeMillis() < deadline && guestProcesses(guest).isNotEmpty()) {
+                Thread.sleep(100)
+            }
+        }
+        for (slot in 0..1) {
+            if (prefs.getString("slot_$slot", null) == guest.id) {
+                prefs.edit().remove("slot_$slot").apply()
+            }
+        }
+        XposedLog.log(
+            "停止 ${guest.label}: " +
+                if (guestProcesses(guest).isEmpty()) "已退出" else "仍有进程 ${last.joinToString { it.second }}"
+        )
+    }
+
+    // 主进程/子进程都已把 cmdline 改成 Guest 包名；优先 ActivityManager，必要时读 /proc。
+    private fun guestProcesses(guest: GuestRecord): List<Pair<Int, String>> {
+        val myUid = android.os.Process.myUid()
+        val found = LinkedHashMap<Int, String>()
+        fun isHostSlot(processName: String): Boolean {
+            val slot = when (processName) {
+                "${context.packageName}:g0" -> 0
+                "${context.packageName}:g1" -> 1
+                else -> return false
+            }
+            return prefs.getString("slot_$slot", null) == guest.id
+        }
+        fun isOurProcess(processName: String): Boolean =
+            processName == guest.id || processName.startsWith("${guest.id}:") ||
+                isHostSlot(processName)
+
+        runCatching {
+            context.getSystemService(ActivityManager::class.java)
+                ?.getRunningAppProcesses()
+                ?.forEach { info ->
+                    if (info.uid == myUid && isOurProcess(info.processName)) {
+                        found[info.pid] = info.processName
+                    }
+                }
+        }
+        runCatching {
+            java.io.File("/proc").listFiles()?.forEach { dir ->
+                val pid = dir.name.toIntOrNull() ?: return@forEach
+                if (found.containsKey(pid)) return@forEach
+                val cmd = runCatching {
+                    java.io.File(dir, "cmdline").readText().trim('\u0000', ' ', '\n')
+                }.getOrNull().orEmpty()
+                if (!isOurProcess(cmd)) return@forEach
+                val status = runCatching {
+                    java.io.File(dir, "status").readText()
+                }.getOrNull().orEmpty()
+                val uid = status.lineSequence().firstOrNull { it.startsWith("Uid:") }
+                    ?.split(Regex("\\s+"))?.getOrNull(1)?.toIntOrNull()
+                if (uid == myUid) found[pid] = cmd
+            }
+        }
+        // main process first, then subprocesses
+        return found.entries.sortedBy { it.value.length }.map { it.key to it.value }
+    }
+
+    // Guest 进程会把 cmdline/进程名改成目标应用名，因此不能只按 :g0/:g1 判断槽位存活；
+    // 还要看该槽位登记的 Guest 主进程及其 :subprocess 是否仍在运行。
+    private fun slotAlive(slot: Int, assigned: String?, running: Set<String>): Boolean {
+        if (running.contains("${context.packageName}:g$slot")) return true
+        if (assigned == null) return false
+        return running.any { it == assigned || it.startsWith("$assigned:") }
     }
 
     private fun finishGuestTasks(guest: GuestRecord) {
@@ -80,7 +153,7 @@ class GuestLauncher(
         for (slot in 0..1) {
             val key = "slot_$slot"
             val assigned = prefs.getString(key, null)
-            val alive = running.contains("${context.packageName}:g$slot")
+            val alive = slotAlive(slot, assigned, running)
             if (!alive) {
                 prefs.edit().putString(key, guestId).apply()
                 return slot

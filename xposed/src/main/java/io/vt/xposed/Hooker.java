@@ -24,7 +24,8 @@ public final class Hooker {
     private final boolean isConstructor;
     private final CopyOnWriteArrayList<XC_MethodHook> callbacks = new CopyOnWriteArrayList<>();
     private volatile Method backup;
-    private final ThreadLocal<Boolean> inCallback = ThreadLocal.withInitial(() -> false);
+    private final ThreadLocal<Integer> callbackDepth = ThreadLocal.withInitial(() -> 0);
+    private static final int MAX_CALLBACK_DEPTH = 64;
     private static final ThreadLocal<Boolean> BYPASS = ThreadLocal.withInitial(() -> false);
 
     public static void beginBypass() {
@@ -98,10 +99,11 @@ public final class Hooker {
             Object receiver = safeArgs.length > 0 ? safeArgs[0] : null;
             return invokeBackup(receiver, Arrays.copyOfRange(safeArgs, 1, safeArgs.length));
         }
-        if (Boolean.TRUE.equals(inCallback.get())) {
-            throw new IllegalStateException("Recursive hook invocation: " + target);
+        int callbackDepthNow = callbackDepth.get();
+        if (callbackDepthNow >= MAX_CALLBACK_DEPTH) {
+            throw new IllegalStateException("Hook callback depth exceeded: " + target);
         }
-        inCallback.set(true);
+        callbackDepth.set(callbackDepthNow + 1);
         try {
         XC_MethodHook.MethodHookParam<Executable> param = new XC_MethodHook.MethodHookParam<>();
         param.method = target;
@@ -174,7 +176,7 @@ public final class Hooker {
         }
         return param.result;
         } finally {
-            inCallback.set(false);
+            callbackDepth.set(callbackDepthNow);
         }
     }
 

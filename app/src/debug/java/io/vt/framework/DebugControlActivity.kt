@@ -1,6 +1,7 @@
 package io.vt.framework
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import io.vt.container.GuestLauncher
 import io.vt.container.data.GuestStore
@@ -14,8 +15,28 @@ import kotlinx.coroutines.launch
 
 /** Debug-only command bridge used by automated device tests. */
 class DebugControlActivity : Activity() {
+    private val finishHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val finishTask = Runnable { finish() }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        processIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        processIntent(intent)
+    }
+
+    override fun onDestroy() {
+        finishHandler.removeCallbacks(finishTask)
+        super.onDestroy()
+    }
+
+    private fun processIntent(intent: Intent) {
+        // stop 后紧接 launch 时，上一个 intent 的 finish 会让新 intent 被丢弃。
+        finishHandler.removeCallbacks(finishTask)
         val action = intent.getStringExtra("action").orEmpty()
         val pkg = intent.getStringExtra("pkg").orEmpty()
         val module = intent.getStringExtra("module").orEmpty()
@@ -98,7 +119,10 @@ class DebugControlActivity : Activity() {
                 XposedLog.log("DEBUG $action failed")
                 XposedLog.log(t)
             } finally {
-                runOnUiThread { finish() }
+                runOnUiThread {
+                    finishHandler.removeCallbacks(finishTask)
+                    finishHandler.postDelayed(finishTask, 900)
+                }
             }
         }
     }

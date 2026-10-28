@@ -5,9 +5,9 @@
 > 当前版本 **0.1.0**，是一个可运行的原型，不是太极/LSPosed 的完整替代品。
 > 已在 Android 15（x86_64 模拟器）与 **Android 16 arm64 真机（HyperOS）** 上验证：
 > **抖音 40.7.0** 可导入、进入推荐流并播放视频，Push/WsChannel 跨进程 Service 由容器 Stub 启动；
-> **番茄小说 / 红果免费短剧 7.4.1.32** 可自然启动、完成隐私同意并浏览推荐流（短剧可全屏播放），
-> 但打开正文会收到服务端 `ILLEGAL_ACCESS`（code 110），提示“当前版本不安全”——这是服务端防盗版/风控，
-> 无 root 容器无法可靠绕过。详见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
+> **红果免费短剧 7.4.1.32** 可自然启动、浏览推荐流并播放短剧；**番茄小说 7.4.1.32** 可启动、
+> 浏览书城推荐流与书籍详情，但打开章节正文仍会收到服务端 `ILLEGAL_ACCESS`（code 110）的
+> “当前版本不安全”防拷页——这是服务端防盗版校验，无 root 容器无法可靠绕过。详见 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)。
 > **NewPipe 0.29.1** 主界面/设置页/PlayerService，**Telegram 13.1.0** 引导页/手机号页/Proxy Settings 均可用。
 > 抖音短信登录的容器侧 `onActivityResult` 丢失已修复，滑块后的验证码页仍待真实手机号复测。
 
@@ -64,6 +64,31 @@ TaiChi 类工具通常需要 root，或者要在安装前重打包 APK。VT 采�
   - **真机身份一致性（best-effort）**：使用真实安装 APK/原生库路径、codePath/resourcePath、安装/更新时间；
     进程 cmdline/comm 与 `getRunningAppProcesses` 返回 Guest 身份；从 Guest 的 PM/UID 包列表中隐藏容器包；
     宿主开启 cleartext 以兼容字节系 CDN。仍无法隐藏的数据目录/内核 UID/maps/Xposed 痕迹见兼容性文档。
+  - **PackageManager 视图自洽（2026-10-26）**：示例应用内置 `PmAudit`（**27 项**交叉比对断言），
+    对照真机语义逐项校验。修复前基线 `passed=10 failed=7`，逐项定位并修复了 7 处确定缺陷：
+    宿主包隐藏此前因异常被 Hooker 回滚而**从未生效**；`getNameForUid` 未接管导致 UID 反查暴露宿主包名；
+    已安装列表与直接查询返回两套 UID/dataDir；flags 语义错误导致签名被无条件返回且新版重载恒为 0；
+    `ApplicationInfo` 多字段硬编码、`versionCode` 被截断。修复后容器/普通/真机已卸载三种场景
+    均 `passed=17 failed=0`。详见 `docs/TESTING.md` 第 9.7 节。
+  - **PM 查询路径盲区（2026-10-26）**：复核时用 `dexdump` 反汇编 `framework.jar` 逐个确认查询入口的
+    最终实现路径，发现 `PackageManager.getPackageInfoAsUserCached`（静态）经 `PropertyInvalidatedCache`
+    直连 PMS binder，**完全绕过 `ApplicationPackageManager`**——此前所有实例方法 hook 一个都拦不住它。
+    后果是目标应用真机卸载后 Guest 启动即崩（`is package not installed?`），且该路径泄漏 PMS 真实
+    UID/dataDir 与实例方法返回的容器视图矛盾。第二批又修掉 9 处同族缺陷，其中根因是
+    `Hooker.java:152-174` 的语义：`after` 回调里 `param.result = X` 不清 `throwable`，
+    原方法抛过异常时改写结果会被丢弃（需 `before` + `setResult`）。
+    另有 `before` 回调不能靠 `throw` 短路：`Hooker.invoke()` 会**回滚并放行原方法**
+    （`returnEarly=false`），目标应用真机已安装时严格语义直接失效 —— 该问题只在真机上暴露。
+    断言扩到 **28 项**，Android 15 模拟器与 Android 16 真机（eb72c928）三场景均 `passed=28 failed=0`。
+    详见 `docs/TESTING.md` 第 9.8 节。
+  - **稳定性修复（2026-10-26 第四批）**：补齐媒体键 `ISessionManager$Stub$Proxy` 归属改写
+    （修复前按暂停键会杀 Guest；Hook 已安装，播放场景待真机复测）；
+    `stop` 在进程改名后用 PID 直接终止并等待退出；
+    `clear` 确认进程退出后再删数据；静态 Receiver 在 `AppComponentFactory` 前用 Guest
+    classloader 实例化，修复 `t41.c` ClassNotFound 导致的“VT 反复停止”；
+    ContentProvider 按真实 Android 语义传 Application，修复抖音 Aha/EC
+    `ContextImpl cannot be cast to Application`（红果/番茄 provider_failed=0；
+    抖音该异常消失但仍在 Splash 后原生 SIGSEGV）。
   - **子进程 Activity**：导入时保留 Activity 的 `processName`；启动时按目标进程选择 `:g0`/`:g1` 占位
     Activity，子进程独立创建 Guest Application 并加载模块；停止容器会移除占位 Activity 任务并同时结束主/子进程。
   - **原生库**：导入时复制 .so，Guest DexClassLoader 原生库搜索路径可 `System.loadLibrary`；
@@ -135,6 +160,19 @@ adb shell am start -n io.vt.framework/.DebugControlActivity --es action launch -
 adb shell am start -n io.vt.framework/.DebugControlActivity --es action stop --es pkg io.vt.sampleapp
 ```
 
+### UI / OCR 自动化（开发机）
+
+真机/模拟器页面操作与冒烟测试可用 OCR + Activity 焦点识别（不依赖视频页会崩的
+uiautomator）：
+
+```bash
+./scripts/ui.sh -d 127.0.0.1:16384 -p com.phoenix.read state
+./scripts/ui.sh -d 127.0.0.1:16384 -p com.phoenix.read tap-text 全屏观看
+./scripts/scenarios/hongguo-smoke.sh -d 127.0.0.1:16384 --fresh
+```
+
+依赖 `rapidocr_onnxruntime`；产物写入 `tmp_uitest/<case>/`（截图、logcat、VT 日志）。
+
 ## 工程结构
 
 ```
@@ -146,17 +184,42 @@ xposed/              Xposed API 82 + LSPlant/Dobby JNI + MiniDebugInfo 符号解
 sample-app/          端到端测试 Guest（多 Activity、Application、数据计数）
 sample-module/       示例 Xposed 模块（Hook getMessage / appTag）
 docs/                架构、兼容性、测试证据
+scripts/             adb/OCR UI 自动化与冒烟场景
 ```
 
 ## 关键限制（必读）
 
 当前原型**尚不能保证主流强对抗应用可用**：
 
+- **服务端风控（2026-10-26/27 对照确认）**：同一台 MuMu 上，官方直装红果 7.4.1.32
+  （真实 UID）清数据后连续 3 次重启均正常；而 VT Guest 在“确认主/子进程全部退出 +
+  `clear` 后数据目录无文件”的干净状态下，首个 `bookmall/tab` 请求仍被服务端以
+  `ILLEGAL_ACCESS`（code 110）拒绝并弹出“当前版本不安全，请到正规应用市场下载”。
+  这不是设备污染或旧数据残留，而是**容器环境（宿主 UID / 容器 dataDir / 原生 maps）
+  被识别**。2026-10-27 新建干净 MuMu profile（PD2245）并加入 native maps/fd
+  路径虚拟化后：红果启动/推荐流 110=0，连续 force-stop 重启仍 0；但点“全屏观看”时
+  `bookmall/tab` 仍 2×110 + 网络错误；同 profile 官方直装播放正常。关闭该 native shim
+  后 Guest 在启动约 1 秒内原生崩溃（ExitInfo `APP CRASH(NATIVE)` status=6），说明
+  shim 是启动必需，110 仍有另一层信号（宿主 UID / host APK 签名 / dataDir / 服务端
+  device risk）。免 root 容器无法完全消除；详见兼容性 3.6.6。
+  MuMu 对番茄 7.4.1.32/抖音 36.4.0 的新 native 不兼容（原生崩溃），
+  这两款必须在真实 arm64 设备验证（见兼容性 3.6.7）。
+
 - **多进程 Guest**：Activity 可路由到第二个进程；跨进程 **Service** 已可通过宿主 StubService 启动/绑定
   （抖音 Push/WsChannel 已实际使用），但跨进程 Provider/Receiver 与 >2 进程槽仍未完成。
 - **目标应用**：抖音 40.7.0 的真机主流程已验证，短信登录验证码页待真实手机号复测，反作弊/长稳仍需继续；
-  番茄小说/红果短剧可启动浏览，但**正文接口被服务端以 `ILLEGAL_ACCESS`（code 110）拒绝**，
-  这是无 root 容器无法可靠绕过的防盗版/风控，账号/支付/长时间播放/子进程 Provider 亦未验证。
+  红果短剧可浏览推荐流并播放短剧，但服务端会对容器环境的 `bookmall/tab` 返回
+  `ILLEGAL_ACCESS` 并触发盗版 Toast（干净数据首请求即可复现，见上文与兼容性 3.6.5）；
+  番茄小说首会话可浏览书城/书籍详情并阅读正文，但正文接口同样受服务端风控影响。
+  MuMu 实测（2026-10-26）：番茄 7.1.9.32 书城/详情/第 1 章正文可读，连续 3 轮
+  PID stop/relaunch 110=0，第 4 次启动出现 1 次 `bookmall/tab` 110（Toast 一闪）；
+  抖音 36.4.0 官方能到隐私页，VT Guest 在 Splash 后原生 SIGSEGV
+  （ExitInfo `SIGNALED status=11`），需真机/目标版本复测。
+  这是无 root 容器无法可靠绕过的风控/防盗版链，账号/支付/子进程 Provider 亦未验证。
+  启动回归（Guest `getOpPackageName` 与内核 UID 不一致触发 `ActivityTaskManager` 归属拒绝）已于
+  2026-10-26 修复；停止/清数据已改为按 PID 终止并确认退出（见兼容性 3.6.5）。
+  客户端侧的 PM 视图自相矛盾已系统性修复（28 项断言三场景全通过，模拟器与真机均已复跑），
+  但服务端仍可从内核 UID、`/proc/self/maps`、容器 dataDir 路径等运行时痕迹判定环境。
 - **测试环境**：真机为 HyperOS（厂商修改较多），上述结果不外推到所有 Android 16 设备。
 - **跨应用广播**：动态/静态 Receiver 的 Guest 内部广播已支持；为保证 Guest 内部可达，已注册 action 的广播定向宿主包，向其他应用发送的隐式广播语义受限。
 - **反容器/反 Hook**：签名校验、完整性校验、Native 反调试、Root/容器检测、风控 SDK 尚未对抗；抖音、番茄等应用预计会触发。
